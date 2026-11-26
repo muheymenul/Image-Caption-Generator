@@ -1,0 +1,17 @@
+{
+  "dataset": "flickr30k",
+  "num_test_images": 1000,
+  "beam_width": 3,
+  "greedy": {
+    "BLEU-1": 0.637,
+    "BLEU-2": 0.456,
+    "BLEU-3": 0.3151,
+    "BLEU-4": 0.2177
+  },
+  "beam": {
+    "BLEU-1": 0.6616,
+    "BLEU-2": 0.4802,
+    "BLEU-3": 0.3411,
+    "BLEU-4": 0.2423
+  }
+}

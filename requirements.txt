@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------
+# Runtime dependencies for the FastAPI app (app/api.py)
+# Tested with Python 3.13. TensorFlow/Keras must match the versions
+# used for training on Kaggle (weights are saved in Keras 3 format).
+# Replace the >= pins with your exact versions before release:
+#   pip freeze | Select-String "^(tensorflow|keras|fastapi|uvicorn|python-multipart|pillow|numpy)=="
+# ---------------------------------------------------------------
+tensorflow>=2.20
+keras>=3.0
+numpy>=1.26
+pillow>=10.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
+# ---------------------------------------------------------------
+# Extra packages used only by notebooks/training_pipeline.ipynb
+# (already pre-installed on Kaggle; uncomment to train locally)
+# ---------------------------------------------------------------
+# pandas>=2.0
+# matplotlib>=3.8
+# nltk>=3.8

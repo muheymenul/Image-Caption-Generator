@@ -1,0 +1,14 @@
+{
+  "vocab_size": 7388,
+  "max_len": 28,
+  "num_img_tokens": 100,
+  "feat_dim": 1536,
+  "embed_dim": 512,
+  "num_heads": 8,
+  "ff_dim": 2048,
+  "num_decoder_layers": 3,
+  "num_encoder_layers": 1,
+  "dropout": 0.3,
+  "image_size": 300,
+  "dataset": "flickr30k"
+}

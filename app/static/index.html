@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Caption Generator</title>
+  <meta name="description" content="Upload a photo and get an English caption from an EfficientNetB3 + Transformer model.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%2318202B'/%3E%3Cpath d='M7 12V7h5M20 7h5v5M25 20v5h-5M12 25H7v-5' stroke='%23F0A202' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,500;1,300;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --fog: #E7EAEE;
+      --paper: #F7F8FA;
+      --ink: #18202B;
+      --graphite: #5B6573;
+      --line: #CBD1D9;
+      --marigold: #F0A202;
+      --marigold-soft: rgba(240, 162, 2, 0.28);
+      --error: #B4380B;
+      --ok: #2F7D4F;
+
+      --serif: "Spectral", Georgia, "Times New Roman", serif;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+      --step--1: 0.8125rem;
+      --step-0: 1rem;
+      --step-1: 1.25rem;
+      --step-2: 1.75rem;
+      --step-3: clamp(1.75rem, 1.1rem + 2.2vw, 2.75rem);
+
+      --radius-frame: 4px;
+      --radius-control: 999px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--fog);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: var(--step-0);
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+    }
+    button, input { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+
+    /* ---------- Header ---------- */
+    .site-header, .site-footer, main { max-width: 1280px; width: 100%; margin-left: auto; margin-right: auto; }
+    .site-header {
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      padding: 1.25rem clamp(1rem, 4vw, 3rem);
+    }
+    .brand {
+      font-family: var(--serif); font-size: var(--step-1); font-weight: 500;
+      letter-spacing: -0.01em; margin: 0;
+    }
+    .status {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: var(--step--1); color: var(--graphite);
+    }
+    .status-dot {
+      width: 0.5rem; height: 0.5rem; border-radius: 50%;
+      background: var(--line);
+    }
+    .status[data-state="ready"] .status-dot { background: var(--ok); }
+    .status[data-state="error"] .status-dot { background: var(--error); }
+
+    /* ---------- Layout ---------- */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: clamp(1.5rem, 4vw, 3.5rem);
+      align-items: start;
+      padding: clamp(0.5rem, 2vw, 1.5rem) clamp(1rem, 4vw, 3rem) 3rem;
+    }
+
+    /* ---------- Viewfinder (the memorable element) ---------- */
+    .viewfinder {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      background: var(--ink);
+      border-radius: var(--radius-frame);
+      overflow: hidden;
+      cursor: pointer;
+      isolation: isolate;
+    }
+    .viewfinder:focus-visible { outline-offset: 4px; }
+    .viewfinder img {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; display: none;
+    }
+    .viewfinder.has-image img { display: block; }
+
+    /* Corner brackets, like a camera framing guide */
+    .bracket {
+      position: absolute; width: 2.25rem; height: 2.25rem; z-index: 3;
+      border-color: rgba(247, 248, 250, 0.85); border-style: solid; border-width: 0;
+      transition: transform 200ms ease, border-color 200ms ease;
+      pointer-events: none;
+    }
+    .bracket.tl { top: 1rem; left: 1rem; border-top-width: 2px; border-left-width: 2px; }
+    .bracket.tr { top: 1rem; right: 1rem; border-top-width: 2px; border-right-width: 2px; }
+    .bracket.bl { bottom: 1rem; left: 1rem; border-bottom-width: 2px; border-left-width: 2px; }
+    .bracket.br { bottom: 1rem; right: 1rem; border-bottom-width: 2px; border-right-width: 2px; }
+    .viewfinder.dragover .bracket { border-color: var(--marigold); }
+    .viewfinder.dragover .bracket.tl { transform: translate(6px, 6px); }
+    .viewfinder.dragover .bracket.tr { transform: translate(-6px, 6px); }
+    .viewfinder.dragover .bracket.bl { transform: translate(6px, -6px); }
+    .viewfinder.dragover .bracket.br { transform: translate(-6px, -6px); }
+
+    .empty-prompt {
+      position: absolute; inset: 0; z-index: 2;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.5rem; padding: 2rem; text-align: center;
+      color: var(--paper);
+    }
+    .empty-prompt strong {
+      font-family: var(--serif); font-weight: 400; font-size: var(--step-2);
+      letter-spacing: -0.01em;
+    }
+    .empty-prompt span { font-size: var(--step--1); color: #AEB6C1; }
+    .viewfinder.has-image .empty-prompt { display: none; }
+
+    /* 10 x 10 grid = the 100 visual tokens EfficientNetB3 produces */
+    .token-grid {
+      position: absolute; z-index: 2;
+      display: grid; grid-template-columns: repeat(10, 1fr); grid-template-rows: repeat(10, 1fr);
+      opacity: 0; transition: opacity 250ms ease;
+      pointer-events: none;
+    }
+    .token-grid span {
+      border-right: 1px solid rgba(240, 162, 2, 0.35);
+      border-bottom: 1px solid rgba(240, 162, 2, 0.35);
+      background: transparent;
+    }
+    .viewfinder.scanning .token-grid { opacity: 1; }
+    .viewfinder.scanning .token-grid span { animation: attend 1.6s ease-in-out infinite; }
+    @keyframes attend {
+      0%, 100% { background: transparent; }
+      40% { background: var(--marigold-soft); }
+    }
+
+    .frame-meta {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 0.5rem 1rem; margin-top: 0.75rem;
+      font-size: var(--step--1); color: var(--graphite);
+      min-height: 2rem;
+    }
+    .file-name {
+      flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .link-button {
+      background: none; border: 0; padding: 0.25rem 0; cursor: pointer;
+      color: var(--ink); text-decoration: underline; text-underline-offset: 3px;
+      font-size: var(--step--1);
+    }
+
+    /* ---------- Caption panel ---------- */
+    .panel { display: flex; flex-direction: column; gap: 2rem; padding-top: 0.25rem; }
+
+    .caption-block { min-height: 9rem; }
+    .caption-heading {
+      margin: 0 0 0.75rem; font-size: var(--step--1); font-weight: 500; color: var(--graphite);
+    }
+    .caption {
+      margin: 0;
+      font-family: var(--serif); font-weight: 300; font-style: italic;
+      font-size: var(--step-3); line-height: 1.18; letter-spacing: -0.015em;
+      max-width: 22ch;
+    }
+    .caption.placeholder {
+      font-style: normal; font-weight: 400; color: var(--graphite);
+      font-size: var(--step-1); line-height: 1.45; max-width: 32ch;
+    }
+    .caption .word {
+      display: inline-block; opacity: 0; transform: translateY(0.25em);
+      animation: word-in 320ms ease forwards;
+    }
+    @keyframes word-in { to { opacity: 1; transform: none; } }
+
+    .caption-actions {
+      display: flex; align-items: center; gap: 1rem; margin-top: 1rem;
+      font-size: var(--step--1); color: var(--graphite);
+    }
+    .caption-actions[hidden] { display: none; }
+
+    .error {
+      margin: 0; padding: 0.75rem 1rem; border-left: 3px solid var(--error);
+      background: rgba(180, 56, 11, 0.07); color: var(--error); font-size: var(--step--1);
+    }
+    .error[hidden] { display: none; }
+
+    /* Alternatives */
+    .alternatives h3 {
+      margin: 0 0 0.75rem; font-size: var(--step--1); font-weight: 500; color: var(--graphite);
+    }
+    .alternatives ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+    .alternatives li {
+      display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; gap: 0.25rem 1rem;
+      align-items: center; padding: 0.75rem 0; border-bottom: 1px solid var(--line);
+    }
+    .alt-text { font-family: var(--serif); font-size: 1.0625rem; line-height: 1.35; }
+    .alt-conf { font-size: var(--step--1); color: var(--graphite); text-align: right; font-variant-numeric: tabular-nums; }
+    .alt-bar { grid-column: 1 / -1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+    .alt-bar i { display: block; height: 100%; background: var(--marigold); width: 0; transition: width 500ms ease; }
+    .alternatives[hidden] { display: none; }
+
+    /* Controls */
+    .controls {
+      display: flex; flex-direction: column; gap: 1.25rem;
+      padding-top: 1.5rem; border-top: 1px solid var(--line);
+    }
+    .beam-row { display: flex; flex-direction: column; gap: 0.5rem; }
+    .beam-label { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+    .beam-label label { font-weight: 500; font-size: var(--step--1); }
+    .beam-label output { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .beam-hint { font-size: var(--step--1); color: var(--graphite); margin: 0; }
+
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none; width: 100%; height: 1.5rem; background: transparent;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--line); border-radius: 2px; }
+    input[type="range"]::-moz-range-track { height: 3px; background: var(--line); border-radius: 2px; }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 1.125rem; height: 1.125rem; border-radius: 50%;
+      background: var(--ink); margin-top: -7.5px; border: 3px solid var(--fog);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 1.125rem; height: 1.125rem; border-radius: 50%; background: var(--ink); border: 3px solid var(--fog);
+    }
+
+    .primary {
+      align-self: flex-start;
+      display: inline-flex; align-items: center; gap: 0.6rem;
+      padding: 0.8rem 1.6rem; border: 0; border-radius: var(--radius-control);
+      background: var(--ink); color: var(--paper); font-weight: 500; cursor: pointer;
+      transition: background 150ms ease, transform 150ms ease;
+    }
+    .primary:hover:not(:disabled) { background: #2A3545; }
+    .primary:active:not(:disabled) { transform: scale(0.98); }
+    .primary:disabled { background: #9AA3AE; cursor: not-allowed; }
+    .spinner {
+      width: 0.9rem; height: 0.9rem; border-radius: 50%;
+      border: 2px solid rgba(247, 248, 250, 0.35); border-top-color: var(--paper);
+      animation: spin 700ms linear infinite; display: none;
+    }
+    .primary.busy .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- Footer ---------- */
+    .site-footer {
+      display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem;
+      padding: 1.25rem clamp(1rem, 4vw, 3rem); border-top: 1px solid var(--line);
+      font-size: var(--step--1); color: var(--graphite);
+    }
+    .site-footer a { color: var(--ink); text-underline-offset: 3px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 1.5rem; transform: translate(-50%, 1rem);
+      background: var(--ink); color: var(--paper); padding: 0.6rem 1.1rem; border-radius: var(--radius-control);
+      font-size: var(--step--1); opacity: 0; pointer-events: none;
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 860px) {
+      main { grid-template-columns: 1fr; }
+      .caption { max-width: none; }
+      .caption-block { min-height: 6rem; }
+      .primary { align-self: stretch; justify-content: center; }
+    }
+
+    .touch-only { display: none; }
+    @media (hover: none) and (pointer: coarse) {
+      .touch-only { display: inline; }
+      .pointer-only { display: none; }
+    }
+    @media (max-width: 600px) {
+      .site-header { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+      .viewfinder.scanning .token-grid span { animation: none; background: rgba(240, 162, 2, 0.12); }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <h1 class="brand">Image Caption Generator</h1>
+    <p class="status" id="status" data-state="loading" role="status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span id="status-text">Connecting to the model…</span>
+    </p>
+  </header>
+
+  <main>
+    <section aria-label="Photo">
+      <div class="viewfinder" id="viewfinder" role="button" tabindex="0"
+           aria-label="Add a photo. Click, press Enter, drop a file or paste an image.">
+        <span class="bracket tl"></span><span class="bracket tr"></span>
+        <span class="bracket bl"></span><span class="bracket br"></span>
+        <img id="preview" alt="">
+        <div class="token-grid" id="token-grid" aria-hidden="true"></div>
+        <div class="empty-prompt">
+          <strong class="pointer-only">Drop a photo here</strong>
+          <strong class="touch-only">Add a photo</strong>
+          <span class="pointer-only">or click to choose one. You can also paste an image with Ctrl+V.</span>
+          <span class="touch-only">Tap to take a photo or choose one from your gallery.</span>
+        </div>
+      </div>
+      <input type="file" id="file-input" class="visually-hidden" accept="image/jpeg,image/png,image/webp,image/bmp,image/gif" tabindex="-1">
+      <div class="frame-meta">
+        <span class="file-name" id="file-name">JPEG, PNG, WebP or BMP, up to 10 MB</span>
+        <button type="button" class="link-button" id="replace-btn" hidden>Choose another photo</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Caption">
+      <div class="caption-block" aria-live="polite">
+        <h2 class="caption-heading">What the model sees</h2>
+        <p class="caption placeholder" id="caption">Add a photo and the model will describe it in one sentence.</p>
+        <div class="caption-actions" id="caption-actions" hidden>
+          <button type="button" class="link-button" id="copy-btn">Copy caption</button>
+          <span id="timing"></span>
+        </div>
+      </div>
+
+      <p class="error" id="error" role="alert" hidden></p>
+
+      <div class="alternatives" id="alternatives" hidden>
+        <h3>Other ways to say it</h3>
+        <ol id="alt-list"></ol>
+      </div>
+
+      <div class="controls">
+        <div class="beam-row">
+          <div class="beam-label">
+            <label for="beam">Beam width</label>
+            <output id="beam-value" for="beam">3</output>
+          </div>
+          <input type="range" id="beam" min="1" max="5" step="1" value="3">
+          <p class="beam-hint" id="beam-hint">Keeps the 3 best sentences in play at each word. Higher is slower but often more fluent.</p>
+        </div>
+        <button type="button" class="primary" id="describe-btn" disabled>
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="describe-label">Describe photo</span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>EfficientNetB3 encoder with a Transformer decoder and beam search.</span>
+    <a href="/docs">API documentation</a>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const MAX_BYTES = 10 * 1024 * 1024;
+      const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/bmp", "image/gif"];
+
+      const $ = (id) => document.getElementById(id);
+      const viewfinder = $("viewfinder"), preview = $("preview"), fileInput = $("file-input");
+      const tokenGrid = $("token-grid"), fileName = $("file-name"), replaceBtn = $("replace-btn");
+      const captionEl = $("caption"), captionActions = $("caption-actions"), timing = $("timing");
+      const copyBtn = $("copy-btn"), errorEl = $("error");
+      const altBox = $("alternatives"), altList = $("alt-list");
+      const beam = $("beam"), beamValue = $("beam-value"), beamHint = $("beam-hint");
+      const describeBtn = $("describe-btn"), describeLabel = $("describe-label");
+      const statusEl = $("status"), statusText = $("status-text"), toast = $("toast");
+
+      let currentFile = null;
+      let lastBeam = null;
+      let busy = false;
+
+      // 10 x 10 cells; staggered delays make the "attention" sweep diagonally
+      for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 10; c++) {
+          const cell = document.createElement("span");
+          cell.style.animationDelay = `${(r + c) * 70}ms`;
+          tokenGrid.appendChild(cell);
+        }
+      }
+
+      // Fit the grid to the visible image area (object-fit: contain leaves letterbox bars)
+      function fitGrid() {
+        if (!preview.naturalWidth) return;
+        const box = viewfinder.getBoundingClientRect();
+        const scale = Math.min(box.width / preview.naturalWidth, box.height / preview.naturalHeight);
+        const w = preview.naturalWidth * scale, h = preview.naturalHeight * scale;
+        Object.assign(tokenGrid.style, {
+          width: `${w}px`, height: `${h}px`,
+          left: `${(box.width - w) / 2}px`, top: `${(box.height - h) / 2}px`,
+        });
+      }
+      window.addEventListener("resize", fitGrid);
+
+      // ---------- Model status ----------
+      async function checkHealth() {
+        try {
+          const res = await fetch("/health");
+          const data = await res.json();
+          if (data.model_loaded) {
+            statusEl.dataset.state = "ready";
+            const words = Number(data.vocab_size).toLocaleString();
+            statusText.textContent = `Model ready, trained on ${prettyDataset(data.trained_on)} with ${words} words`;
+          } else {
+            statusText.textContent = "Model is loading…";
+            setTimeout(checkHealth, 2000);
+          }
+        } catch {
+          statusEl.dataset.state = "error";
+          statusText.textContent = "Server not reachable";
+        }
+      }
+      const prettyDataset = (d) => ({ flickr8k: "Flickr8k", flickr30k: "Flickr30k" }[d] || d);
+
+      // ---------- File handling ----------
+      function openPicker() { if (!busy) fileInput.click(); }
+
+      function acceptFile(file) {
+        hideError();
+        if (!file) return;
+        if (!ACCEPTED.includes(file.type)) {
+          showError("That file isn't a supported image. Use JPEG, PNG, WebP or BMP. iPhone HEIC photos need converting to JPEG first.");
+          return;
+        }
+        if (file.size > MAX_BYTES) {
+          showError(`That image is ${(file.size / 1048576).toFixed(1)} MB. The limit is 10 MB.`);
+          return;
+        }
+        currentFile = file;
+        lastBeam = null;
+        const url = URL.createObjectURL(file);
+        preview.onload = () => {
+          fitGrid();
+          fileName.textContent = `${file.name}, ${preview.naturalWidth} × ${preview.naturalHeight}`;
+          URL.revokeObjectURL(url);
+        };
+        preview.src = url;
+        preview.alt = `Uploaded photo: ${file.name}`;
+        viewfinder.classList.add("has-image");
+        replaceBtn.hidden = false;
+        resetCaption();
+        describe();
+      }
+
+      fileInput.addEventListener("change", () => { acceptFile(fileInput.files[0]); fileInput.value = ""; });
+      viewfinder.addEventListener("click", openPicker);
+      viewfinder.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPicker(); }
+      });
+      replaceBtn.addEventListener("click", openPicker);
+
+      ["dragenter", "dragover"].forEach((ev) =>
+        viewfinder.addEventListener(ev, (e) => { e.preventDefault(); viewfinder.classList.add("dragover"); }));
+      ["dragleave", "dragend", "drop"].forEach((ev) =>
+        viewfinder.addEventListener(ev, () => viewfinder.classList.remove("dragover")));
+      viewfinder.addEventListener("drop", (e) => { e.preventDefault(); acceptFile(e.dataTransfer.files[0]); });
+      window.addEventListener("dragover", (e) => e.preventDefault());
+      window.addEventListener("drop", (e) => e.preventDefault());
+
+      window.addEventListener("paste", (e) => {
+        const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+        if (item) acceptFile(item.getAsFile());
+      });
+
+      // ---------- Beam width ----------
+      function updateBeamUI() {
+        const k = Number(beam.value);
+        beamValue.textContent = k;
+        beamHint.textContent = k === 1
+          ? "Greedy decoding: picks the single most likely word each step. Fastest."
+          : `Keeps the ${k} best sentences in play at each word. Higher is slower but often more fluent.`;
+        refreshButton();
+      }
+      beam.addEventListener("input", updateBeamUI);
+
+      function refreshButton() {
+        describeBtn.disabled = !currentFile || busy;
+        describeLabel.textContent = busy
+          ? "Describing…"
+          : (lastBeam !== null ? "Describe again" : "Describe photo");
+      }
+      describeBtn.addEventListener("click", describe);
+
+      // ---------- Captioning ----------
+      async function describe() {
+        if (!currentFile || busy) return;
+        busy = true;
+        hideError();
+        describeBtn.classList.add("busy");
+        viewfinder.classList.add("scanning");
+        refreshButton();
+
+        const k = Number(beam.value);
+        const body = new FormData();
+        body.append("file", currentFile, currentFile.name || "pasted-image.png");
+
+        try {
+          const res = await fetch(`/caption?beam_width=${k}&num_alternatives=4`, { method: "POST", body });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(errorMessage(res.status, data.detail));
+          lastBeam = k;
+          renderResult(data);
+        } catch (err) {
+          if (captionEl.classList.contains("placeholder")) {
+            captionEl.textContent = "No caption yet for this photo.";
+          }
+          showError(err.message.startsWith("Failed to fetch")
+            ? "The server stopped responding. Check that uvicorn is still running, then try again."
+            : err.message);
+        } finally {
+          busy = false;
+          describeBtn.classList.remove("busy");
+          viewfinder.classList.remove("scanning");
+          refreshButton();
+        }
+      }
+
+      function errorMessage(status, detail) {
+        if (status === 413) return "That image is over the 10 MB limit.";
+        if (status === 415) return "That image format isn't supported. Use JPEG, PNG, WebP or BMP.";
+        if (status === 503) return "The model is still loading. Try again in a few seconds.";
+        return typeof detail === "string" ? detail : `The server returned an error (${status}).`;
+      }
+
+      function renderResult(data) {
+        const sentence = capitalize(data.caption);
+        captionEl.classList.remove("placeholder");
+        captionEl.textContent = "";
+        sentence.split(" ").forEach((w, i) => {
+          const span = document.createElement("span");
+          span.className = "word";
+          span.textContent = w;
+          span.style.animationDelay = `${i * 70}ms`;
+          captionEl.append(span, " ");
+        });
+        captionEl.dataset.text = sentence;
+
+        timing.textContent = `Described in ${Math.round(data.inference_time_ms).toLocaleString()} ms with beam width ${data.beam_width}`;
+        captionActions.hidden = false;
+
+        const others = (data.alternatives || []).filter((a) => a.caption !== data.caption).slice(0, 3);
+        altList.textContent = "";
+        others.forEach((alt) => {
+          const pct = Math.round(Math.exp(alt.score) * 100);
+          const li = document.createElement("li");
+          li.innerHTML = `<span class="alt-text"></span><span class="alt-conf"></span><span class="alt-bar"><i></i></span>`;
+          li.querySelector(".alt-text").textContent = capitalize(alt.caption);
+          li.querySelector(".alt-conf").textContent = `${pct}%`;
+          li.querySelector(".alt-conf").title = `Score ${alt.score}`;
+          altList.appendChild(li);
+          requestAnimationFrame(() => { li.querySelector(".alt-bar i").style.width = `${pct}%`; });
+        });
+        altBox.hidden = others.length === 0;
+      }
+
+      function resetCaption() {
+        captionEl.classList.add("placeholder");
+        captionEl.textContent = "Reading the photo…";
+        captionActions.hidden = true;
+        altBox.hidden = true;
+      }
+
+      const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : "");
+
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(captionEl.dataset.text || "");
+          showToast("Caption copied");
+        } catch {
+          showToast("Couldn't copy. Select the text instead.");
+        }
+      });
+
+      function showError(msg) { errorEl.textContent = msg; errorEl.hidden = false; }
+      function hideError() { errorEl.hidden = true; }
+
+      let toastTimer;
+      function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+      }
+
+      updateBeamUI();
+      checkHealth();
+    })();
+  </script>
+</body>
+</html>
